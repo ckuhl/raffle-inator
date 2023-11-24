@@ -23,9 +23,8 @@ You only need one to win!
 % git clone git@github.com:ckuhl/raffle-inator.git
 % cd raffle-inator/
 % pipenv install
-% pipenv run python main.py \
+% RAFFLE_INATOR_LEADERBOARD_OWNER=1234567 pipenv run python main.py \
   --year 2023 \
-  --leaderboard-owner 1234567 \
   --excluded-participants ckuhl
 ```
 

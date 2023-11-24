@@ -21,6 +21,7 @@ def _get_cache() -> pathlib.Path:
 
 def get_leaderboard_json(
         year: int,
+        session_cookie: str | None,
         leaderboard_owner: int,
 ) -> dict:
     """Load or fetch (and save) the leaderboard JSON"""
@@ -32,15 +33,18 @@ def get_leaderboard_json(
     if cached_input.exists() and cached_input.stat().st_mtime > (
             time.time() - rate_limit_seconds
     ):
-        log.info("using cached input")
+        log.info("Under API rate limit, using cached input")
         return json.loads(cached_input.open().read())
 
-    log.info("querying leaderboard")
-    # FIXME: Need to load the session cookie from elsewhere
-    session_cookie = open("session_cookie.txt").read().strip()
+    log.info("API rate limit elapsed, gathering latest data")
+
+    if session_cookie is None:
+        with open("session_cookie.txt") as f:
+            session_cookie = f.read().strip()
+
     leaderboard_url = f"https://adventofcode.com/{year}/leaderboard/private/view/{leaderboard_owner}.json"
     response = requests.get(leaderboard_url, cookies={"session": session_cookie})
-
+    response.raise_for_status()
     cached_input.open("w").write(json.dumps(response.json()))
 
     return response.json()
@@ -71,39 +75,32 @@ def json_to_participants(
     return [x for x in all_people if x.name not in excluded_participants and x.stars]
 
 
-def raffle(p: list[Participant]):
+def raffle(participants: list[Participant]) -> str:
     """Do the raffle. We sort participants by ID so that this is deterministic between runs."""
-    p = sorted(p, key=lambda x: x.id)
-
-    out_of = sum(x.stars for x in p)
-
-    # We save this twice so we can log it once we select a winner
-    original_roll = random.randint(1, out_of)
-    dice_roll = original_roll
-
-    for participant in p:
-        dice_roll -= participant.stars
-        if dice_roll <= 0:
-            log.info(
-                f"Rolled for {original_roll} out of {out_of}, winner: {participant.name}"
-            )
-            return participant.name
+    entries = [x.stars for x in participants]
+    winner = random.sample(participants, k=1, counts=entries)[0]
+    log.info(f"Winner: {winner.name}")
+    return winner.name
 
 
 def do_raffle(
         year: int,
+        session_cookie: str | None,
         leaderboard_owner: int,
         excluded_participants: list[str] | None = None,
 ) -> str:
     """Pull the above together!"""
     json_blob = get_leaderboard_json(
         year=year,
+        session_cookie=session_cookie,
         leaderboard_owner=leaderboard_owner,
     )
     participants = json_to_participants(
         json_blob,
         excluded_participants=excluded_participants,
     )
+    if not participants:
+        return "No stars means no raffle, sorry!"
     return raffle(participants)
 
 
@@ -115,10 +112,14 @@ def do_raffle(
     default=None,
     help="Comma-separated list of participants to exclude",
 )
+@click.option(
+    "--session-cookie", default=None, help="Session cookie to use with requests"
+)
 @click.option("-v", "--verbose", default=False, is_flag=True, help="Log more info")
 def cli(
         year: int,
         leaderboard_owner: int,
+        session_cookie: str | None,
         excluded_participants: list[str] | None,
         verbose: bool = False,
 ) -> None:
@@ -127,9 +128,10 @@ def cli(
     This allows for testability if I can be bothered to write tests in the future.
     """
     if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
     result = do_raffle(
         year=year,
+        session_cookie=session_cookie,
         leaderboard_owner=leaderboard_owner,
         excluded_participants=excluded_participants,
     )
@@ -137,4 +139,4 @@ def cli(
 
 
 if __name__ == "__main__":
-    cli()
+    cli(auto_envvar_prefix="RAFFLE_INATOR")
