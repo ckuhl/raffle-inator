@@ -60,7 +60,10 @@ class Participant:
     completion_day_level: dict
     local_score: int
     id: int
-    name: str
+    name: str | None
+
+    def identifier(self):
+        return str(getattr(self, "name") or getattr(self, "id"))
 
 
 def json_to_participants(
@@ -71,8 +74,7 @@ def json_to_participants(
     if not excluded_participants:
         excluded_participants = []
     all_people = [Participant(**x) for x in blob["members"].values()]
-
-    return [x for x in all_people if x.name not in excluded_participants and x.stars]
+    return [x for x in all_people if x.identifier() not in excluded_participants and x.stars]
 
 
 def raffle(participants: list[Participant]) -> str:
